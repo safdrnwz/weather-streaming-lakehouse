@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+checkpoints/
+spark-warehouse/
+.pytest_cache/
+.ruff_cache/

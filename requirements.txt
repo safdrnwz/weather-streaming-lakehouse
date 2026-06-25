@@ -1,0 +1,17 @@
+# Streaming weather lakehouse -- dependencies
+pyspark==3.5.3            # Structured Streaming engine (reads Kafka)
+kafka-python-ng==2.2.3       # producer (pure-Python Kafka client)
+requests==2.32.3          # call the Open-Meteo API
+pandas==2.2.2             # per-batch transforms + gold aggregation
+sqlalchemy==2.0.51        # write to Postgres
+psycopg2-binary==2.9.12   # Postgres driver
+python-dotenv==1.0.1      # read .env
+
+# dev/test
+pytest==8.3.3
+ruff==0.6.9
+
+# NOTES:
+# - Use Python 3.12 (pyspark 3.5 / pandas 2.2 support up to 3.12).
+# - Spark needs Java (8/11/17/21). On first run it downloads the Kafka connector
+#   jar from Maven, so keep internet ON the first time.
