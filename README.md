@@ -134,6 +134,56 @@ standard patterns — run them on your machine and share any error.
 
 ---
 
+## ⏱️ Realtime app (tiered medallion scheduler)
+
+Besides the Kafka + Spark streaming job, the project ships a **scheduler-driven
+real-time app** that runs each medallion stage on its own cadence (a scheduler
+is the right tool when each layer needs a different refresh rate):
+
+```
+API / scenario  --every 10s-->  BRONZE   (raw, append-only)
+BRONZE          --every 30s-->  SILVER   (clean, validated, date-partitioned)
+SILVER          --every 60s-->  GOLD     (current per city + hourly/daily, incremental)
+```
+
+Run it:
+```bash
+pip install apscheduler
+python realtime/orchestrator.py
+```
+
+**Scenarios** make the data move in real time (the real API only updates every
+~15 min). Choose one in `.env` or inline:
+```bash
+SOURCE_MODE=scenario SCENARIO=heatwave python realtime/orchestrator.py
+# scenarios: normal | heatwave | storm | cold_snap
+# or use the real API:  SOURCE_MODE=api
+```
+
+Cadences are configurable (`BRONZE_EVERY_SECONDS`, `SILVER_EVERY_SECONDS`,
+`GOLD_EVERY_SECONDS`). Open the dashboard in another terminal
+(`streamlit run dashboard/app.py`) to watch it update live. Temperature is shown
+as the **current (latest) reading** and as **avg / max** in aggregates — never a
+meaningless sum.
+
+---
+
+## 📊 Dashboard (Streamlit + Plotly)
+
+A live dashboard reads the gold/silver tables and shows premium interactive
+charts (current temps, trend lines, daily max with heatwave highlight, hourly
+heatmap). Run it (with the producer + streaming job running):
+
+```bash
+pip install streamlit plotly
+streamlit run dashboard/app.py
+```
+
+It opens in the browser and refreshes every 30s. If you see "No data yet",
+let the pipeline run for a minute and click **Refresh now**.
+
+---
+
 ## 🔑 Key streaming concepts shown
 
 - Kafka producer/consumer, topics, message keys (city → consistent partitioning)

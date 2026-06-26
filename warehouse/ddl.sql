@@ -11,10 +11,12 @@ CREATE SCHEMA IF NOT EXISTS bronze;
 CREATE SCHEMA IF NOT EXISTS silver;
 CREATE SCHEMA IF NOT EXISTS gold;
 
--- BRONZE: raw Kafka messages, stored as-is (append-only audit trail).
+-- BRONZE: raw readings, stored as-is (append-only). `processed` marks rows the
+-- silver job has already consumed (so bronze->silver runs incrementally).
 CREATE TABLE IF NOT EXISTS bronze.raw_messages (
     id          bigserial PRIMARY KEY,
     raw_json    jsonb       NOT NULL,     -- the full message exactly as received
+    processed   boolean     NOT NULL DEFAULT false,
     ingested_at timestamptz NOT NULL DEFAULT now()
 );
 

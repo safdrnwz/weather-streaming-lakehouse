@@ -3,7 +3,7 @@ common/db.py
 ============
 Database access for the warehouse (weather_warehouse). Provides:
   - a SQLAlchemy engine
-  - schema creation (bronze/silver/gold) with self-healing of gold primary keys
+  - schema creation (bronze/silver/gold)
   - a helper to ensure the per-DAY partition of the silver table exists
   - INSERT helpers (silver append/upsert) and INCREMENTAL gold upserts (MERGE)
 
@@ -74,6 +74,12 @@ def ensure_schemas_and_tables():
         for stmt in sql_only.split(";"):
             if stmt.strip():
                 conn.execute(text(stmt))
+
+        # 4) self-heal: older bronze tables may lack the `processed` column
+        conn.execute(text(
+            f"ALTER TABLE {cfg.BRONZE_SCHEMA}.raw_messages "
+            f"ADD COLUMN IF NOT EXISTS processed boolean NOT NULL DEFAULT false"
+        ))
 
 
 def ensure_silver_partition(day: date):
@@ -172,6 +178,7 @@ def upsert_city_latest(df):
         f"  temperature_c = EXCLUDED.temperature_c, "
         f"  humidity_pct = EXCLUDED.humidity_pct, "
         f"  condition = EXCLUDED.condition "
+        # only overwrite if the incoming reading is newer (out-of-order safe)
         f"WHERE EXCLUDED.event_time > {cfg.GOLD_SCHEMA}.city_latest.event_time"
     )
     with engine().begin() as conn:
@@ -209,3 +216,43 @@ def upsert_daily(df):
     )
     with engine().begin() as conn:
         conn.execute(sql, _records(df, cols))
+
+
+# -----------------------------------------------------------------------------
+# Bronze helpers (used by the realtime scheduler app).
+# -----------------------------------------------------------------------------
+def insert_bronze(messages: list):
+    """Append raw messages to bronze.raw_messages (processed = false)."""
+    if not messages:
+        return
+    import json
+    with engine().begin() as conn:
+        conn.execute(
+            text(f"INSERT INTO {cfg.BRONZE_SCHEMA}.raw_messages (raw_json) VALUES (:j)"),
+            [{"j": json.dumps(m)} for m in messages],
+        )
+
+
+def fetch_unprocessed_bronze():
+    """Return (ids, list[dict]) for bronze rows not yet consumed by silver."""
+    import json
+    with engine().begin() as conn:
+        rows = conn.execute(
+            text(f"SELECT id, raw_json FROM {cfg.BRONZE_SCHEMA}.raw_messages "
+                 f"WHERE NOT processed ORDER BY id")
+        ).fetchall()
+    ids = [r[0] for r in rows]
+    msgs = [r[1] if isinstance(r[1], dict) else json.loads(r[1]) for r in rows]
+    return ids, msgs
+
+
+def mark_bronze_processed(ids: list):
+    """Mark the given bronze rows as consumed (so silver does not re-read them)."""
+    if not ids:
+        return
+    with engine().begin() as conn:
+        conn.execute(
+            text(f"UPDATE {cfg.BRONZE_SCHEMA}.raw_messages SET processed = true "
+                 f"WHERE id = ANY(:ids)"),
+            {"ids": list(ids)},
+        )

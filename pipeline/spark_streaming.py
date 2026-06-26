@@ -4,15 +4,16 @@ pipeline/spark_streaming.py
 The streaming medallion job (PySpark Structured Streaming):
 
     Kafka topic "weather-raw"
-        -> BRONZE  (every raw message appended to bronze.raw_messages)
+        -> BRONZE  (raw messages appended to bronze.raw_messages)
         -> SILVER  (parsed/validated rows -> silver.weather_readings, date-partitioned)
-        -> GOLD    (INCREMENTAL upserts: only the buckets this batch touched)
+        -> GOLD    (city_latest / hourly_stats / daily_stats refreshed from silver)
 
 HOW IT WORKS
   Spark reads Kafka as a streaming source. For each micro-batch we use
   `foreachBatch`: the batch is small (a handful of cities per minute), so we
   convert it to pandas and reuse the SAME tested pure transforms from
-  common/transforms.py, then write to Postgres.
+  common/transforms.py, then write to Postgres. This keeps one tested code path
+  in production. At higher volume you would push the transforms into Spark SQL.
 
 RUN (after Kafka is up and the producer is running):
     python pipeline/spark_streaming.py
@@ -67,12 +68,9 @@ def process_batch(batch_df, batch_id: int):
         except json.JSONDecodeError:
             continue  # skip malformed message
 
-    if not messages:
-        return
-
-    # --- BRONZE: store EVERY message as-is (full append-only history) ---
-    from sqlalchemy import text
+    # --- BRONZE: store raw messages as-is (audit trail) ---
     with dbcfg.engine().begin() as conn:
+        from sqlalchemy import text
         conn.execute(
             text(f"INSERT INTO {cfg.BRONZE_SCHEMA}.raw_messages (raw_json, ingested_at) "
                  f"VALUES (:j, now())"),
@@ -83,7 +81,7 @@ def process_batch(batch_df, batch_id: int):
     raw_df = pd.DataFrame(messages)
     silver_df = transforms.transform_silver(raw_df)
     if not silver_df.empty:
-        # ensure each day's partition exists, then upsert (keeps history)
+        # ensure each day's partition exists, then upsert
         for day in sorted({ts.date() for ts in silver_df["event_time"]}):
             dbcfg.ensure_silver_partition(day)
         dbcfg.upsert_silver(silver_df)

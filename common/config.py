@@ -35,3 +35,16 @@ GOLD_SCHEMA = os.getenv("GOLD_SCHEMA", "gold")
 
 # Spark streaming checkpoint dir (local; required for fault tolerance).
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", str(ROOT / "checkpoints"))
+
+# --- Realtime scheduler app ---
+# How often each medallion stage runs (seconds).
+BRONZE_EVERY_SECONDS = int(os.getenv("BRONZE_EVERY_SECONDS", "10"))   # API/scenario -> bronze
+SILVER_EVERY_SECONDS = int(os.getenv("SILVER_EVERY_SECONDS", "30"))   # bronze -> silver
+GOLD_EVERY_SECONDS = int(os.getenv("GOLD_EVERY_SECONDS", "60"))       # silver -> gold
+
+# Where bronze readings come from:
+#   "scenario" -> generated dynamic data (visibly real-time; great for demos)
+#   "api"      -> real Open-Meteo (accurate, but updates only every ~15 min)
+SOURCE_MODE = os.getenv("SOURCE_MODE", "scenario")
+# Active scenario when SOURCE_MODE=scenario: normal | heatwave | storm | cold_snap
+SCENARIO = os.getenv("SCENARIO", "normal")

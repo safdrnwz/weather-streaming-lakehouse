@@ -62,3 +62,23 @@ def test_gold_hourly_buckets(raw_messages):
     silver = transforms.transform_silver(raw_messages)
     hourly = transforms.build_gold_hourly(silver)
     assert {"city", "hour_start", "avg_temp", "max_temp", "min_temp", "readings"} <= set(hourly.columns)
+
+
+# --- scenarios (realtime app data generator) ---
+def test_scenario_generates_one_reading_per_city():
+    from common import scenarios
+    from common import weather_rules as wr
+    rows = scenarios.generate("normal")
+    assert len(rows) == len(wr.CITIES)
+    assert {"city", "event_time", "temperature_c", "weather_code"} <= set(rows[0])
+
+
+def test_heatwave_is_hot_and_valid():
+    import pandas as pd
+
+    from common import scenarios, transforms
+    rows = scenarios.generate("heatwave")
+    df = transforms.transform_silver(pd.DataFrame(rows))
+    # heatwave readings are valid and run hot (every reading above 30C)
+    assert not df.empty
+    assert (df["temperature_c"] > 30).all()
